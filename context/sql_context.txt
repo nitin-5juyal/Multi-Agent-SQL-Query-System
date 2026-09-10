@@ -1,0 +1,191 @@
+crewRank:
+Cabin Crew = CC
+Captain = CP
+First Officer = FO
+
+base:
+CCJ = Calicut (Kozhikode)
+TRZ = Tiruchirappalli (Trichy)
+BBI = Bhubaneswar
+DEL = Delhi
+BLR = Bangalore(bangaluru)
+HYD = Hyderabad
+COK = Cochin (Kochi)
+BOM = Mumbai(mumbai)
+CNN = Kannur
+JAI = Jaipur
+IDR = Indore
+MAA = Chennai
+LKO = Lucknow
+CCU = Kolkata
+TRV = Thiruvananthapuram
+IXE = Mangalore
+================================================================
+CAE_AIX CREW MANAGEMENT — AGENT TABLE CONTEXT
+================================================================
+Database : [CAE_AIX].[dbo]
+Purpose  : Context file for SQL agent — describes all columns,
+           data types, business meanings and key filter values.
+           Inject this into the agent system prompt.
+================================================================
+
+
+================================================================
+TABLE 1: DocumentExpiryTracker
+================================================================
+Purpose:
+  Tracks all crew documents (medical, license, passport, visa etc.)
+  with issue dates, expiry dates, and current document status.
+  One row per document per crew member.
+
+JOIN KEY: DocumentExpiryTracker.ID = CaeCrewList.stafffNo
+
+Columns:
+--------------------------------------------------------------
+Column               Type          Nullable   Description
+--------------------------------------------------------------
+ID                   int           NOT NULL   Primary key. Links to CaeCrewList.ID
+Name                 varchar       NOT NULL   Crew full name
+Base                 varchar(3)    NULL       Airport base code (MAA, BOM, DEL etc.)
+RankCode             varchar(10)   NULL       Crew rank (FO, CC, SCC, CP, GI, TRCC)
+DOJ                  date          NULL       Date of joining the organization
+employmentEndDate    date          NULL       Date employment ended. NULL = still active
+CrewStatus           varchar       NULL       Current status: Active / Inactive / Terminated
+FleetType            varchar       NULL       Aircraft fleet assigned (A320, ATR etc.)
+DocType              varchar       NULL       Document type: Medical, License, Passport, Visa
+DocNo                varchar       NULL       Document number / reference
+IssueDate            date          NULL       Date document was issued
+ExpiryDate           date          NULL       Date document expires — KEY filter column
+Delta                int           NULL       Days remaining to expiry. Negative = already expired
+DocStatus            varchar       NULL       Valid / Expired / Expiring Soon
+CurrentRosterCode    varchar       NULL       Current pairing or roster assignment code
+LoadDate             date          NULL       Date record was loaded into system
+CrewType             varchar       NULL       Type of crew: Cabin / Flight Deck
+
+Key Filter Examples:
+  DocStatus = 'Valid'              → only valid documents
+  DocStatus = 'Expired'            → expired documents
+  DocType = 'Medical'              → medical certificates only
+  Delta < 0                        → already expired
+  Delta BETWEEN 0 AND 30           → expiring within next 30 days
+  Base = 'MAA'                     → Chennai base crew documents
+  CrewStatus = 'Active'            → currently active crew only
+  employmentEndDate IS NULL        → crew still employed
+
+
+================================================================
+TABLE 2: CaeCrewList
+================================================================
+Purpose:
+  Master list of all crew members. Contains current rank, base,
+  fleet assignment, contract details, and employment history.
+  One row per crew member per reporting period (Month_Year).
+
+JOIN KEY: CaeCrewList.stafffNo = DocumentExpiryTracker.ID
+
+Columns:
+--------------------------------------------------------------
+Column                   Type          Nullable   Description
+--------------------------------------------------------------
+ID                       int           NOT NULL   Primary key. Links to DocumentExpiryTracker.ID
+stafffNo                 varchar       NULL       Unique staff number (NOTE: 3 f's — stafffNo)
+crewName                 varchar       NOT NULL   Full name of crew member
+crewRank                 varchar(10)   NULL       Rank: FO, CC, SCC, CP, GI, TRCC
+crewBase                 varchar(3)    NULL       Home base airport code (MAA, BOM, DEL etc.)
+fleetCode                varchar       NULL       Aircraft fleet code (A320, ATR etc.)
+employmentStartDate      date          NULL       Date crew joined / contract started
+employmentEndDate        date          NULL       Date crew left. NULL = still active
+functionCode             varchar       NULL       Operational function assigned to crew
+Loaddate                 date          NULL       Date record was loaded into system
+Month_Year               varchar       NULL       Reporting period (e.g. 2024-08)
+contractCode             varchar       NULL       Contract type: Permanent, Contract, Trainee
+crewEmail                varchar       NULL       Official crew email address
+crewBaseEffectiveDate    date          NULL       When current base assignment started
+crewBaseExpiryDate       date          NULL       When current base assignment ends
+crewRankEffectiveDate    date          NULL       When current rank became effective
+crewRankExpiryDate       date          NULL       When current rank expires
+fleetCodeEffectiveDate   date          NULL       Fleet assignment start date
+fleetCodeExpiryDate      date          NULL       Fleet assignment end date
+
+Key Filter Examples:
+  crewBase = 'MAA'                 → Chennai base crew
+  crewBase = 'BOM'                 → Mumbai base crew
+  crewRank = 'FO'                  → First Officers only
+  crewRank = 'CC'                  → Cabin Crew only
+  employmentEndDate IS NULL        → currently active crew
+  contractCode = 'Permanent'       → permanent staff only
+  fleetCode = 'A320'               → A320 fleet crew only
+
+
+================================================================
+JOIN BETWEEN TABLES
+================================================================
+  SELECT T1.crewName, T2.DocStatus, T2.ExpiryDate
+  FROM CaeCrewList AS T1
+  INNER JOIN DocumentExpiryTracker AS T2
+    ON T1.stafffNo = T2.ID
+
+  Use T1 for CaeCrewList
+  Use T2 for DocumentExpiryTracker
+
+
+================================================================
+BASE CODE MAPPING (crewBase / Base column)
+================================================================
+  MAA = Chennai          BOM = Mumbai           DEL = Delhi
+  BLR = Bangalore        HYD = Hyderabad        COK = Kochi
+  CCJ = Calicut          TRV = Trivandrum       LKO = Lucknow
+  CCU = Kolkata          JAI = Jaipur           IDR = Indore
+  IXE = Mangalore        CNN = Kannur           BBI = Bhubaneswar
+  TRZ = Trichy           BDQ = Vadodara         PNQ = Pune
+
+
+================================================================
+RANK CODE MAPPING (crewRank / RankCode column)
+================================================================
+  FO   = First Officer
+  CC   = Cabin Crew
+  SCC  = Senior Cabin Crew
+  CP   = Chief Pilot
+  GI   = Ground Instructor
+  TRCC = Training Cabin Crew
+
+
+================================================================
+IMPORTANT NOTES FOR AGENT
+================================================================
+1. Column 'stafffNo' has 3 f's — always spell exactly as: stafffNo
+2. Use T1 for CaeCrewList, T2 for DocumentExpiryTracker always
+3. 'LoadDate' exists in BOTH tables — always use alias (T1.Loaddate / T2.LoadDate)
+4. 'employmentEndDate' exists in BOTH tables — always qualify with alias
+5. Delta = days to expiry. Negative value means document already expired
+6. Always use TOP 1000 for large result queries on production DB
+7. Use INNER JOIN when crew must exist in both tables
+8. Use LEFT JOIN when you want all crew even if no document record exists
+9. Always use [CAE_AIX].[dbo].[TableName] for full table reference
+10. DocType values: Medical, License, Passport, Visa, Training
+
+
+================================================================
+SAMPLE QUERIES FOR REFERENCE
+================================================================
+
+-- Crew with valid medical at BOM base
+SELECT T1.stafffNo, T1.crewName, T1.crewRank,
+       T2.DocType, T2.DocStatus, T2.ExpiryDate
+FROM CaeCrewList AS T1
+INNER JOIN DocumentExpiryTracker AS T2 ON T1.stafffNo = T2.ID
+WHERE T1.crewBase = 'BOM'
+  AND T2.DocType = 'Medical'
+  AND T2.DocStatus = 'Valid'
+
+--give me crew name whose document status is valid
+SELECT T1.crewName
+FROM CaeCrewList T1
+INNER JOIN DocumentExpiryTracker T2 ON T1.stafffNo = T2.ID
+WHERE T2.DocStatus = 'Valid'
+
+
+================================================================
+END OF CONTEXT FILE
+================================================================
